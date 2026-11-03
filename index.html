@@ -1,0 +1,1262 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Слух и клавиши</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #fffdf8; --ink: #2a2622; --muted: #8a8175; --line: #e2dccf;
+    --accent: #3d6fb6; --ok: #2f9e5b; --bad: #d1493f; --reveal: #e3a72f;
+    --white-key: #fffefb; --black-key: #23201d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1916; --panel: #25221e; --ink: #ece6dc; --muted: #9a9183; --line: #3a352f;
+      --white-key: #f3efe7; --black-key: #111; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0; font-weight: 650; }
+  #midiStatus { margin-left: auto; font-size: 13px; color: var(--muted); }
+  #midiStatus.on::before { content: "●"; color: var(--ok); margin-right: 6px; }
+  #midiStatus.off::before { content: "●"; color: var(--bad); margin-right: 6px; }
+  main { display: grid; grid-template-columns: 1fr 320px; gap: 20px; padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+
+  .stats { display: flex; gap: 28px; flex-wrap: wrap; }
+  .stat b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+  .stage { position: relative; min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; margin: 18px 0 10px; }
+  #msg { font-size: 22px; font-weight: 600; min-height: 32px; }
+  #sub { color: var(--muted); min-height: 22px; margin-top: 4px; }
+  #answer { font-size: 17px; margin-top: 8px; min-height: 26px; }
+  .tries { display: flex; gap: 8px; margin-top: 12px; }
+  .tries i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--muted); }
+  .tries i.used { background: var(--bad); border-color: var(--bad); }
+  #cheer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
+    font-size: 54px; font-weight: 800; color: var(--ok); opacity: 0; }
+  #cheer.show { animation: pop 1.1s ease-out; }
+  @keyframes pop { 0% { opacity: 0; transform: scale(.6); } 20% { opacity: 1; transform: scale(1.12); }
+    70% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1) translateY(-20px); } }
+
+  .buttons { display: flex; gap: 10px; justify-content: center; margin-bottom: 16px; }
+  button { font: inherit; padding: 9px 18px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; }
+  kbd { font-size: 11px; color: var(--muted); margin-left: 6px; }
+  button.primary kbd { color: #dbe6f7; }
+
+  #keyboard { position: relative; height: 190px; user-select: none; touch-action: none; }
+  .key { position: absolute; top: 0; border: 1px solid #00000033; border-radius: 0 0 6px 6px; cursor: pointer;
+    display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; font-size: 10px; color: #776e62; transition: background .08s; }
+  .key.white { height: 100%; background: var(--white-key); z-index: 1; }
+  .key.black { height: 62%; background: var(--black-key); z-index: 2; color: #aaa; }
+  .key.out { filter: brightness(.82); }
+  .key.out.black { filter: brightness(1.6); }
+  .key.scale::after { content: ""; position: absolute; bottom: 24px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .6; }
+  .key.tonic::after { background: var(--reveal); opacity: 1; width: 8px; height: 8px; }
+  .key.held { background: var(--accent) !important; color: #fff; }
+  .key.ok { background: var(--ok) !important; color: #fff; }
+  .key.bad { background: var(--bad) !important; color: #fff; }
+  .key.reveal { background: var(--reveal) !important; color: #000; }
+  .key.given.given { box-shadow: inset 0 0 0 4px var(--reveal); }
+  .key.given.white::before { content: "▾"; position: absolute; top: 8px; font-size: 10px; color: #8a6a1f; }
+  .key.range-edge { box-shadow: inset 0 -4px 0 var(--accent); }
+
+  aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 18px 0 8px; font-weight: 600; }
+  aside h2:first-child { margin-top: 0; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .row label { flex: 1; }
+  select { font: inherit; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); width: 100%; }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; cursor: pointer; }
+  .check input { margin-top: 3px; }
+  .hint { font-size: 12.5px; color: var(--muted); margin: 4px 0 0; }
+  #demoMark { display: inline-block; width: 4px; height: 4px; border-radius: 50%; margin-left: 4px; vertical-align: super; }
+  #demoMark.on { background: var(--muted); opacity: .5; }
+  #learnPanel { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .lp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .lp-head button { margin-left: auto; font-size: 13px; padding: 5px 10px; }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 12.5px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; }
+  .chip.known { border-color: var(--ok); }
+  .chip.locked { opacity: .35; border-style: dashed; }
+  .chip.now { outline: 2px solid var(--accent); }
+  #rangeBtn.active { background: var(--reveal); border-color: var(--reveal); color: #000; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎹 Слух и клавиши<span id="demoMark"></span></h1>
+  <div id="midiStatus" class="off">MIDI: подключение…</div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="stats">
+      <div class="stat"><b id="sTotal">0</b><span>баллы</span></div>
+      <div class="stat"><b id="sRound">0</b><span>заданий</span></div>
+      <div class="stat"><b id="sFirst">—</b><span>с первой попытки</span></div>
+      <div class="stat"><b id="sStreak">0</b><span>серия</span></div>
+    </div>
+
+    <div class="stage">
+      <div id="msg">Нажмите «Начать»</div>
+      <div id="sub">Программа сыграет задание — повторите его на клавиатуре</div>
+      <div class="tries" id="tries"></div>
+      <div id="answer"></div>
+      <div id="cheer"></div>
+    </div>
+
+    <div class="buttons">
+      <button id="startBtn" class="primary">Начать<kbd>Enter</kbd></button>
+      <button id="repeatBtn" disabled>Повторить<kbd>Пробел</kbd></button>
+      <button id="skipBtn" disabled>Пропустить</button>
+    </div>
+
+    <div id="keyboard"></div>
+
+    <div id="learnPanel" hidden>
+      <div class="lp-head">
+        <span id="learnSummary"></span>
+        <button id="learnReset">Сбросить прогресс</button>
+      </div>
+      <div id="chips"></div>
+      <p class="hint" id="confusions"></p>
+    </div>
+  </section>
+
+  <aside class="card">
+    <h2>Режим</h2>
+    <select id="train">
+      <option value="practice">Свободная практика</option>
+      <option value="learn">Обучение (адаптивное)</option>
+    </select>
+    <p class="hint" id="trainHint"></p>
+    <div id="learnOnly">
+      <h2>Курс</h2>
+      <select id="course">
+        <option value="general">Общий: ноты → интервалы → аккорды</option>
+        <option value="chords">Аккорды: T S D → обращения → септаккорды</option>
+        <option value="intervals">Интервалы от заданной ноты</option>
+        <option value="melodies">Мелодии: цепочки интервалов</option>
+        <option value="progressions">Последовательности аккордов</option>
+      </select>
+      <div id="progOpts">
+        <label class="check"><input type="checkbox" id="progTriads"> Трезвучия</label>
+        <label class="check"><input type="checkbox" id="progSevenths"> Септаккорды</label>
+        <label class="check"><input type="checkbox" id="progShowFirst"> Показывать первый аккорд</label>
+        <label class="check"><input type="checkbox" id="progAnyVoicing"> Засчитывать любое расположение аккорда</label>
+      </div>
+    </div>
+
+    <div id="practiceOnly">
+    <h2>Диапазон</h2>
+    <div class="row">
+      <label>от <select id="lo"></select></label>
+      <label>до <select id="hi"></select></label>
+    </div>
+    <button id="rangeBtn">Задать на пианино</button>
+    <p class="hint" id="rangeHint"></p>
+    </div>
+
+    <h2>Тональность</h2>
+    <div class="row">
+      <select id="tonic" style="flex:0 0 90px"></select>
+      <select id="mode">
+        <option value="major">мажор</option>
+        <option value="minor">натуральный минор</option>
+        <option value="harmonic">гармонический минор</option>
+        <option value="chromatic">без тональности (все ноты)</option>
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" id="showScale"> Отмечать ноты тональности на клавиатуре</label>
+
+    <div id="practiceOnly2">
+    <h2>Задания</h2>
+    <label class="check"><input type="checkbox" id="tNote"> Одиночные ноты</label>
+    <label class="check"><input type="checkbox" id="tDyad"> Двухзвучия (интервалы)</label>
+    <label class="check"><input type="checkbox" id="tTriad"> Трезвучия</label>
+
+    <h2>Сложность созвучий</h2>
+    <select id="level">
+      <option value="1">1 — только тоника</option>
+      <option value="2">2 — главные ступени (T, S, D)</option>
+      <option value="3">3 — все ступени</option>
+      <option value="4">4 — все ступени, широкое расположение</option>
+    </select>
+    <p class="hint" id="levelHint"></p>
+    </div>
+
+    <h2>Звук и проверка</h2>
+    <div class="row"><select id="output"></select></div>
+    <label class="check"><input type="checkbox" id="arp"> Перед аккордом сыграть звуки по одному</label>
+    <label class="check"><input type="checkbox" id="anyOctave"> Засчитывать в любой октаве</label>
+  </aside>
+</main>
+
+<script>
+// ---------- Теория ----------
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const LETTER_PC = [0, 2, 4, 5, 7, 9, 11];
+const RU = ['До', 'Ре', 'Ми', 'Фа', 'Соль', 'Ля', 'Си'];
+const ACC = { '-2': '𝄫', '-1': '♭', '0': '', '1': '♯', '2': '𝄪' };
+const MODE_STEPS = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+  harmonic: [0, 2, 3, 5, 7, 8, 11],
+  chromatic: null,
+};
+// Написание тоники для каждого pc: [индекс буквы, альтерация]
+const MAJOR_TONICS = [[0,0],[1,-1],[1,0],[2,-1],[2,0],[3,0],[3,1],[4,0],[5,-1],[5,0],[6,-1],[6,0]];
+const MINOR_TONICS = [[0,0],[0,1],[1,0],[2,-1],[2,0],[3,0],[3,1],[4,0],[4,1],[5,0],[6,-1],[6,0]];
+const OCTAVE_RU = ['субконтроктава', 'контроктава', 'большая октава', 'малая октава', 'первая октава',
+  'вторая октава', 'третья октава', 'четвёртая октава', 'пятая октава'];
+const OCTAVE_GEN = ['субконтроктавы', 'контроктавы', 'большой октавы', 'малой октавы', 'первой октавы',
+  'второй октавы', 'третьей октавы', 'четвёртой октавы', 'пятой октавы'];
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+const QUALITY = { maj: 'мажор', min: 'минор', dim: 'уменьшённый', aug: 'увеличенный' };
+const INVERSION = ['трезвучие', 'секстаккорд', 'квартсекстаккорд'];
+const INV_SUB = ['', '₆', '₆₄'];
+const NUM = ['прима', 'секунда', 'терция', 'кварта', 'квинта', 'секста', 'септима', 'октава', 'нона', 'децима',
+  'ундецима', 'дуодецима', 'терцдецима', 'квартдецима', 'квинтдецима'];
+const CHROMATIC_INTERVALS = [, 'малая секунда', 'большая секунда', 'малая терция', 'большая терция', 'чистая кварта',
+  'тритон', 'чистая квинта', 'малая секста', 'большая секста', 'малая септима', 'большая септима', 'чистая октава',
+  'малая нона', 'большая нона', 'малая децима', 'большая децима', 'чистая ундецима', 'тритон через октаву',
+  'чистая дуодецима', 'малая терцдецима', 'большая терцдецима', 'малая квартдецима', 'большая квартдецима', 'две октавы'];
+
+const mod12 = n => ((n % 12) + 12) % 12;
+const isBlack = m => [1, 3, 6, 8, 10].includes(mod12(m));
+
+function naturalSpell(pc, flats) {
+  const nat = LETTER_PC.indexOf(pc);
+  if (nat >= 0) return { letter: nat, acc: 0 };
+  return flats ? { letter: LETTER_PC.indexOf(mod12(pc + 1)), acc: -1 } : { letter: LETTER_PC.indexOf(mod12(pc - 1)), acc: 1 };
+}
+
+function buildKey(tonic, mode) {
+  const steps = MODE_STEPS[mode];
+  if (!steps) return { chromatic: true, pcs: new Set([...Array(12).keys()]), spell: pc => naturalSpell(pc, false) };
+  const [tl] = (mode === 'major' ? MAJOR_TONICS : MINOR_TONICS)[tonic];
+  const scale = steps.map((st, i) => {
+    const pc = mod12(tonic + st), letter = (tl + i) % 7;
+    let acc = mod12(pc - LETTER_PC[letter]); if (acc > 6) acc -= 12;
+    return { pc, letter, acc, degree: i };
+  });
+  const flats = scale.some(n => n.acc < 0);
+  const byPc = new Map(scale.map(n => [n.pc, n]));
+  return { chromatic: false, tonic, mode, scale, flats, byPc, pcs: new Set(byPc.keys()),
+    spell: pc => byPc.get(pc) || naturalSpell(pc, flats) };
+}
+
+function tonicLabel(pc, mode) {
+  const [l, a] = (mode === 'major' ? MAJOR_TONICS : MINOR_TONICS)[pc];
+  return RU[l] + ACC[a];
+}
+const ruName = (m, key) => { const s = key.spell(mod12(m)); return RU[s.letter] + ACC[s.acc]; };
+const sciName = (m, key) => {
+  const s = key.spell(mod12(m));
+  return LETTERS[s.letter] + ACC[s.acc] + (Math.floor((m - s.acc) / 12) - 1);
+};
+const plainSci = m => ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][mod12(m)] + (Math.floor(m / 12) - 1);
+
+function intervalName(lo, hi, key) {
+  const semis = hi - lo;
+  if (key.chromatic) return CHROMATIC_INTERVALS[semis] || semis + ' полутонов';
+  const a = key.spell(mod12(lo)), b = key.spell(mod12(hi));
+  const oa = Math.floor((lo - a.acc) / 12), ob = Math.floor((hi - b.acc) / 12);
+  const steps = (ob * 7 + b.letter) - (oa * 7 + a.letter);
+  const simple = steps % 7;
+  const diff = semis - (LETTER_PC[simple] + 12 * Math.floor(steps / 7));
+  const q = [0, 3, 4].includes(simple)
+    ? { '-1': 'уменьшённая', '0': 'чистая', '1': 'увеличенная' }[diff]
+    : { '-2': 'уменьшённая', '-1': 'малая', '0': 'большая', '1': 'увеличенная' }[diff];
+  return (q || '') + ' ' + (NUM[steps] || (steps + 1) + '-я ступень');
+}
+
+function triadQuality(third, fifth) {
+  return { '4,7': 'maj', '3,7': 'min', '3,6': 'dim', '4,8': 'aug' }[third + ',' + fifth];
+}
+
+// ---------- Пул заданий ----------
+// Форма задания: { type, bassPc, offsets: [0, ...], describe(notes) }
+function triadVoicings(rootPc, third, fifth, inversions, spread, info) {
+  const tones = [0, third, fifth];
+  const out = [];
+  for (const inv of inversions) {
+    const close = [0, 1, 2].map(i => tones[(inv + i) % 3] + (inv + i >= 3 ? 12 : 0));
+    const base = close[0];
+    const offs = close.map(t => t - base);
+    const variants = [offs];
+    if (spread) variants.push([0, offs[2], offs[1] + 12]);
+    variants.forEach((o, vi) => out.push({
+      type: 'triad', bassPc: mod12(rootPc + tones[inv]), offsets: o,
+      info: { ...info, rootPc, inv, quality: triadQuality(third, fifth), spread: vi === 1 },
+    }));
+  }
+  return out;
+}
+
+function buildPool(s, key) {
+  const pool = [];
+  const lvl = +s.level;
+  if (s.tNote) for (const pc of key.pcs) pool.push({ type: 'note', bassPc: pc, offsets: [0] });
+
+  if (key.chromatic) {
+    if (s.tDyad) {
+      const allowed = { 1: [3, 4, 7, 12], 2: [3, 4, 5, 7, 8, 9, 12], 3: range(1, 12), 4: range(1, 24) }[lvl];
+      for (let pc = 0; pc < 12; pc++) for (const iv of allowed) pool.push({ type: 'dyad', bassPc: pc, offsets: [0, iv] });
+    }
+    if (s.tTriad) {
+      const kinds = { 1: [[4, 7]], 2: [[4, 7], [3, 7]], 3: [[4, 7], [3, 7], [3, 6], [4, 8]], 4: [[4, 7], [3, 7], [3, 6], [4, 8]] }[lvl];
+      const invs = lvl === 1 ? [0] : [0, 1, 2];
+      for (let pc = 0; pc < 12; pc++) for (const [t, f] of kinds) pool.push(...triadVoicings(pc, t, f, invs, lvl === 4, {}));
+    }
+    return pool;
+  }
+
+  const sc = key.scale;
+  const degreeSets = { 1: [0], 2: [0, 3, 4], 3: [0, 1, 2, 3, 4, 5, 6], 4: [0, 1, 2, 3, 4, 5, 6] }[lvl];
+  const triadOf = d => [sc[d], sc[(d + 2) % 7], sc[(d + 4) % 7]];
+
+  if (s.tDyad) {
+    const seen = new Set();
+    const add = (bassPc, iv) => {
+      const k = bassPc + ':' + iv;
+      if (iv > 0 && !seen.has(k)) { seen.add(k); pool.push({ type: 'dyad', bassPc, offsets: [0, iv] }); }
+    };
+    if (lvl <= 2) {
+      for (const d of degreeSets) {
+        const ch = triadOf(d);
+        for (const a of ch) for (const b of ch) if (a !== b) add(a.pc, mod12(b.pc - a.pc));
+      }
+    } else {
+      for (const a of sc) for (const b of sc) {
+        const iv = mod12(b.pc - a.pc) || 12;
+        add(a.pc, iv);
+        if (lvl === 4) add(a.pc, iv + 12);
+      }
+    }
+  }
+  if (s.tTriad) {
+    for (const d of degreeSets) {
+      const [r, t, f] = triadOf(d);
+      pool.push(...triadVoicings(r.pc, mod12(t.pc - r.pc), mod12(f.pc - r.pc), [0, 1, 2], lvl === 4, { degree: d }));
+    }
+  }
+  return pool;
+}
+
+function range(a, b) { const r = []; for (let i = a; i <= b; i++) r.push(i); return r; }
+
+function placements(shape, lo, hi) {
+  const top = shape.offsets[shape.offsets.length - 1];
+  const res = [];
+  for (let m = lo; m + top <= hi; m++) if (mod12(m) === shape.bassPc) res.push(shape.offsets.map(o => m + o));
+  return res;
+}
+
+const SEVENTHS = { '4,7,10': 'dom7', '3,7,10': 'min7', '4,7,11': 'maj7', '3,6,10': 'hdim7', '3,6,9': 'dim7' };
+const SEV_QUALITY = { dom7: 'малый мажорный', min7: 'малый минорный', maj7: 'большой мажорный',
+  hdim7: 'малый уменьшённый', dim7: 'уменьшённый' };
+const SEV_INVERSION = ['септаккорд', 'квинтсекстаккорд', 'терцквартаккорд', 'секундаккорд'];
+const SEV_SUB = ['₇', '₆₅', '₄₃', '₂'];
+const MINORISH = new Set(['min', 'dim', 'min7', 'hdim7', 'dim7']);
+
+function functionLabel(info, key) {
+  if (info.degree === undefined) return '';
+  const fn = { 0: 'T', 3: 'S', 4: 'D' }[info.degree];
+  const name = fn ? (MINORISH.has(info.quality) ? fn.toLowerCase() : fn) : ROMAN[info.degree];
+  return name + (info.seventh ? SEV_SUB : INV_SUB)[info.inv];
+}
+
+function describe(task, key) {
+  const notes = task.notes;
+  const chord = task.type === 'triad' || task.type === 'seventh';
+  const i = chord ? task.shape.info : null;
+  // Без тональности аккорд пишем в тональности его основного тона, чтобы было G♯–B♯–D♯, а не G♯–C–D♯
+  if (i && key.chromatic) key = buildKey(i.rootPc, MINORISH.has(i.quality) ? 'minor' : 'major');
+  const list = notes.map(m => `${ruName(m, key)} <small>(${sciName(m, key)})</small>`).join(' · ');
+  if (task.type === 'note') {
+    const s = key.spell(mod12(notes[0]));
+    const oct = Math.floor((notes[0] - s.acc) / 12) - 1;
+    return `<b>${ruName(notes[0], key)}</b> ${OCTAVE_GEN[oct] || ''} <small>(${sciName(notes[0], key)})</small>`;
+  }
+  if (task.type === 'interval') {
+    const [a, b] = task.sequence;
+    return `<b>${CHROMATIC_INTERVALS[Math.abs(b - a)]} ${b > a ? 'вверх' : 'вниз'}</b>: ` +
+      `${ruName(a, key)} <small>(${sciName(a, key)})</small> → ${ruName(b, key)} <small>(${sciName(b, key)})</small>`;
+  }
+  if (task.type === 'progression') {
+    const it = task.item;
+    return (it.name ? `<b>${it.name}</b>${it.seventh ? ' (септаккорды)' : ''}<br>` : '') +
+      it.romans.map((r, k) => `${r} <small>${it.symbols[k]}</small>`).join(' → ');
+  }
+  if (task.type === 'melody')
+    return (task.item?.name ? `<b>${task.item.name}</b><br>` : '') + notes.map(m => ruName(m, key)).join(' – ');
+  if (task.type === 'dyad') return `<b>${intervalName(notes[0], notes[1], key)}</b>: ${list}`;
+  if (!i) return list;
+  const root = ruName(i.rootPc + 60, key);
+  const fn = functionLabel(i, key);
+  const name = i.seventh
+    ? `${root} — ${SEV_QUALITY[i.quality]} ${SEV_INVERSION[i.inv]}`
+    : `${root} ${QUALITY[i.quality]} — ${INVERSION[i.inv]}`;
+  return `<b>${name}</b>${fn ? ` (${fn})` : ''}${i.spread ? ', широкое расположение' : ''}<br>${list}`;
+}
+
+// ---------- Настройки ----------
+const DEFAULTS = { lo: 60, hi: 72, tonic: 0, mode: 'major', tNote: true, tDyad: false, tTriad: false,
+  level: '1', train: 'practice', course: 'general', progTriads: true, progSevenths: false,
+  progShowFirst: true, progAnyVoicing: true, showScale: false, arp: false, anyOctave: false, output: '' };
+let S = { ...DEFAULTS };
+try { Object.assign(S, JSON.parse(localStorage.getItem('earSettings') || '{}')); } catch {}
+const save = () => { try { localStorage.setItem('earSettings', JSON.stringify(S)); } catch {} };
+let KEY = buildKey(S.tonic, S.mode);
+
+const LEVEL_HINTS = {
+  key: {
+    1: 'Тоническое трезвучие и его обращения; интервалы между звуками тоники.',
+    2: 'Трезвучия T, S, D с обращениями; интервалы внутри них.',
+    3: 'Трезвучия всех ступеней с обращениями; любые интервалы гаммы в пределах октавы.',
+    4: 'Как 3, плюс широкое расположение аккордов и интервалы до двух октав.',
+  },
+  chromatic: {
+    1: 'Мажорные трезвучия от любой ноты; терции, квинта, октава.',
+    2: 'Мажорные и минорные с обращениями; плюс кварта и сексты.',
+    3: 'Плюс уменьшённые и увеличенные; все интервалы в пределах октавы.',
+    4: 'Как 3, плюс широкое расположение и интервалы до двух октав.',
+  },
+};
+
+const BOOL_SETTINGS = ['tNote', 'tDyad', 'tTriad', 'showScale', 'arp', 'anyOctave',
+  'progTriads', 'progSevenths', 'progShowFirst', 'progAnyVoicing'];
+function fillSettingsUI() {
+  for (const id of ['lo', 'hi']) {
+    const sel = $(id);
+    sel.innerHTML = range(21, 108).map(m =>
+      `<option value="${m}">${plainSci(m)}${mod12(m) === 0 ? ' · ' + OCTAVE_RU[Math.floor(m / 12) - 1].replace(' октава', '') : ''}</option>`).join('');
+    sel.value = S[id];
+  }
+  $('tonic').innerHTML = range(0, 11).map(pc => `<option value="${pc}">${tonicLabel(pc, S.mode)}</option>`).join('');
+  $('tonic').value = S.tonic;
+  $('tonic').disabled = S.mode === 'chromatic';
+  $('mode').value = S.mode;
+  $('level').value = S.level;
+  $('train').value = S.train;
+  $('practiceOnly').hidden = $('practiceOnly2').hidden = S.train === 'learn';
+  $('progOpts').hidden = S.course !== 'progressions';
+  $('learnPanel').hidden = S.train !== 'learn';
+  $('learnOnly').hidden = S.train !== 'learn';
+  $('course').value = S.course;
+  $('trainHint').textContent = S.train === 'learn'
+    ? 'Начинает с нескольких нот, добивается уверенных ответов и постепенно добавляет новое. Прогресс хранится отдельно для каждой тональности.'
+    : '';
+  for (const id of BOOL_SETTINGS) $(id).checked = S[id];
+  $('levelHint').textContent = LEVEL_HINTS[KEY.chromatic ? 'chromatic' : 'key'][S.level];
+}
+
+function onSettingsChange() {
+  S.lo = +$('lo').value; S.hi = +$('hi').value;
+  if (S.lo > S.hi) [S.lo, S.hi] = [S.hi, S.lo];
+  S.tonic = +$('tonic').value; S.mode = $('mode').value; S.level = $('level').value; S.train = $('train').value; S.course = $('course').value;
+  for (const id of BOOL_SETTINGS) S[id] = $(id).checked;
+  if (!S.tNote && !S.tDyad && !S.tTriad) { S.tNote = true; }
+  if (!S.progTriads && !S.progSevenths) { S.progTriads = true; }
+  S.output = $('output').value;
+  KEY = buildKey(S.tonic, S.mode);
+  save();
+  loadLearn();
+  fillSettingsUI();
+  renderLearn();
+  buildKeyboard();
+  if (game.phase !== 'idle') newTask();
+}
+
+// ---------- Клавиатура на экране ----------
+const keyEls = new Map();
+function buildKeyboard() {
+  const kb = $('keyboard');
+  kb.innerHTML = ''; keyEls.clear();
+  const [lo, hi] = viewRange();
+  let start = lo - mod12(lo);
+  let end = Math.max(hi, start + 11);
+  if (isBlack(end)) end++;
+  const whites = range(start, end).filter(m => !isBlack(m));
+  const w = 100 / whites.length;
+  let wi = 0;
+  for (let m = start; m <= end; m++) {
+    const el = document.createElement('div');
+    el.className = 'key ' + (isBlack(m) ? 'black' : 'white');
+    if (isBlack(m)) {
+      el.style.left = `calc(${wi * w}% - ${w * 0.3}%)`;
+      el.style.width = w * 0.6 + '%';
+    } else {
+      el.style.left = wi * w + '%';
+      el.style.width = w + '%';
+      if (mod12(m) === 0 || m === lo || m === hi) el.textContent = plainSci(m);
+      wi++;
+    }
+    if (m < lo || m > hi) el.classList.add('out');
+    if (m === lo || m === hi) el.classList.add('range-edge');
+    if (S.showScale && !KEY.chromatic && KEY.pcs.has(mod12(m))) el.classList.add(mod12(m) === KEY.tonic ? 'tonic' : 'scale');
+    el.addEventListener('pointerdown', e => { e.preventDefault(); clickKey(m); });
+    kb.appendChild(el);
+    keyEls.set(m, el);
+  }
+  paintKeys();
+}
+
+function paintKeys() {
+  for (const [m, el] of keyEls) {
+    el.classList.toggle('held', held.has(m) || game.attempt.has(m));
+    el.classList.toggle('ok', game.flash.ok.has(m));
+    el.classList.toggle('bad', game.flash.bad.has(m));
+    el.classList.toggle('reveal', game.flash.reveal.has(m));
+    el.classList.toggle('given', game.phase === 'listening' && (game.task?.given === m || !!game.task?.givenChord?.includes(m)));
+  }
+}
+
+// ---------- Звук ----------
+let midi = null, ac = null;
+function currentOutput() {
+  if (!midi || S.output === 'synth') return null;
+  const outs = [...midi.outputs.values()];
+  return outs.find(o => o.id === S.output) || outs[0] || null;
+}
+function synthNote(m, when, dur) {
+  ac ||= new AudioContext();
+  const t = ac.currentTime + when, f = 440 * 2 ** ((m - 69) / 12);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.22, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur + 0.8);
+  g.connect(ac.destination);
+  for (const [type, mul, amp] of [['triangle', 1, 1], ['sine', 2, 0.25], ['sine', 3, 0.08]]) {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.type = type; o.frequency.value = f * mul; og.gain.value = amp;
+    o.connect(og).connect(g); o.start(t); o.stop(t + dur + 1);
+  }
+}
+function sound(m, when, dur) {
+  const out = currentOutput();
+  if (out) {
+    const now = performance.now();
+    out.send([0x90, m, 80], now + when * 1000);
+    out.send([0x80, m, 0], now + (when + dur) * 1000);
+  } else synthNote(m, when, dur);
+}
+// Возвращает время (мс), когда прозвучал последний аккорд
+function playNotes(notes, arp) {
+  let t = 0;
+  if (arp && notes.length > 1) { notes.forEach((n, i) => sound(n, i * 0.42, 0.45)); t = notes.length * 0.42 + 0.2; }
+  notes.forEach(n => sound(n, t, notes.length > 1 ? 1.6 : 1.1));
+  return t * 1000;
+}
+
+// Мелодия по нотам; animate — подсвечивать звучащую клавишу. Возвращает время начала последней ноты (мс).
+function playSequence(seq, animate) {
+  const step = 0.55;
+  seq.forEach((n, i) => {
+    sound(n, i * step, i === seq.length - 1 ? 1.0 : step * 0.95);
+    if (animate) game.anim.push(setTimeout(() => { game.flash.reveal = new Set([n]); paintKeys(); }, i * step * 1000));
+  });
+  return (seq.length - 1) * step * 1000;
+}
+function playProgression(t, animate) {
+  const step = 1.1, last = t.chords.length - 1;
+  t.chords.forEach((ch, i) => {
+    [...ch, t.bass[i]].forEach(n => sound(n, i * step, i === last ? 1.8 : step * 0.92));
+    if (animate) game.anim.push(setTimeout(() => { game.flash.reveal = new Set(ch); paintKeys(); }, i * step * 1000));
+  });
+  return last * step * 1000;
+}
+const playTaskSound = (task, animate) => task.chords ? playProgression(task, animate) : task.sequence ? playSequence(task.sequence, animate) : playNotes(task.notes, S.arp);
+
+// ---------- Игра ----------
+const held = new Set();
+const game = {
+  phase: 'idle',          // idle | playing | listening | done
+  task: null, tries: 0, points: 16,
+  attempt: new Set(), waitRelease: false,
+  total: 0, rounds: 0, firstTry: 0, streak: 0, lastKey: '',
+  flash: { ok: new Set(), bad: new Set(), reveal: new Set() },
+  timer: null, captureRange: 0, anim: [], progress: 0,
+};
+const MAX_TRIES = 3, START_POINTS = 16;
+const CHEERS = ['Молодец!', 'Отлично!', 'Точно!', 'Браво!', 'Супер!', 'Верно!'];
+
+function setMsg(msg, sub = '') { $('msg').innerHTML = msg; $('sub').innerHTML = sub; }
+function renderTries() {
+  $('tries').innerHTML = game.phase === 'idle' ? '' :
+    range(1, game.task?.unlimited ? Math.max(MAX_TRIES, game.tries) : MAX_TRIES).map(i => `<i class="${i <= game.tries ? 'used' : ''}"></i>`).join('');
+}
+function renderStats() {
+  $('sTotal').textContent = game.total;
+  $('sRound').textContent = game.rounds;
+  $('sFirst').textContent = game.rounds ? Math.round(100 * game.firstTry / game.rounds) + '%' : '—';
+  $('sStreak').textContent = game.streak;
+}
+const TYPE_PROMPT = { note: 'Сыграйте эту ноту', dyad: 'Сыграйте этот интервал (оба звука вместе)', triad: 'Сыграйте этот аккорд', seventh: 'Сыграйте этот септаккорд',
+  interval: 'Сыграйте вторую ноту интервала',
+  progression: 'Сыграйте всю последовательность', melody: 'Сыграйте мелодию целиком — первая нота подсвечена' };
+
+function newTask() {
+  clearTimeout(game.timer);
+  game.anim.forEach(clearTimeout); game.anim = [];
+  if (demo.on) {
+    if (!demo.items.length) { setMsg('demo.txt пуст', ''); return; }
+    startTask(taskFromNotes(demo.items[demo.i++ % demo.items.length]));
+    return;
+  }
+  if (S.train === 'learn') { startTask(pickLearnTask()); return; }
+  const pool = buildPool(S, KEY).filter(sh => placements(sh, S.lo, S.hi).length);
+  if (!pool.length) {
+    game.phase = 'idle';
+    setMsg('Нет подходящих заданий', 'Расширьте диапазон или выберите другие задания.');
+    return;
+  }
+  let shape, notes, k, guard = 0;
+  do {
+    shape = pool[Math.floor(Math.random() * pool.length)];
+    const pl = placements(shape, S.lo, S.hi);
+    notes = pl[Math.floor(Math.random() * pl.length)];
+    k = notes.join(',');
+  } while (k === game.lastKey && guard++ < 20);
+  game.lastKey = k;
+  startTask({ type: shape.type, shape, notes });
+}
+
+function startTask(task) {
+  game.task = task;
+  game.tries = 0; game.points = START_POINTS;
+  game.attempt.clear(); game.waitRelease = held.size > 0;
+  for (const s of Object.values(game.flash)) s.clear();
+  $('answer').innerHTML = '';
+  $('repeatBtn').disabled = false; $('skipBtn').disabled = false;
+  $('startBtn').innerHTML = 'Заново<kbd>Enter</kbd>';
+  game.progress = 0;
+  if (S.train === 'learn' && !demo.on) buildKeyboard();  // диапазон растёт вместе с курсом
+  renderLearn();
+  if (task.intro) {
+    // Новая карточка: сначала показываем и проигрываем ответ, потом спрашиваем.
+    game.phase = 'playing';
+    const ordered = task.sequence || task.chords;
+    if (!ordered) game.flash.reveal = new Set(task.notes);
+    setMsg('Новое — запомните', 'Послушайте и посмотрите, какие это клавиши');
+    $('answer').innerHTML = describe(task, KEY);
+    renderTries(); paintKeys();
+    const onset = ordered ? playTaskSound(task, true) : playNotes(task.notes, task.notes.length > 1);
+    game.timer = setTimeout(() => {
+      game.flash.reveal.clear(); $('answer').innerHTML = '';
+      playTask();
+    }, onset + 2400);
+    return;
+  }
+  playTask();
+}
+
+function playTask() {
+  game.phase = 'playing';
+  game.attempt.clear();
+  setMsg('♪ Слушайте…', '');
+  renderTries(); paintKeys();
+  game.progress = 0;
+  const lastOnset = playTaskSound(game.task, false);
+  clearTimeout(game.timer);
+  // Короткая пауза после начала звучания, чтобы не принять эхо от пианино за ответ.
+  game.timer = setTimeout(() => {
+    game.phase = 'listening';
+    game.listenStart = performance.now();
+    const from = game.task.given !== undefined && game.task.type === 'interval'
+      ? ` от ноты ${ruName(game.task.given, KEY)}` : '';
+    const first = game.task.givenChord ? ' — первый аккорд подсвечен' : '';
+    setMsg(TYPE_PROMPT[game.task.type] + from + first, `Можно получить <b>${game.points}</b> баллов`);
+    paintKeys();
+  }, lastOnset + 150);
+}
+
+const pcsOf = notes => new Set([...notes].map(mod12));
+function sameSet(a, b) { return a.size === b.size && [...a].every(x => b.has(x)); }
+function isMatch(attempt) {
+  const t = game.task.notes;
+  return S.anyOctave ? sameSet(pcsOf(attempt), pcsOf(t)) : sameSet(attempt, new Set(t));
+}
+function isForeign(m) {
+  return S.anyOctave ? !pcsOf(game.task.notes).has(mod12(m)) : !game.task.notes.includes(m);
+}
+
+function correct() {
+  game.phase = 'done';
+  game.total += game.points; game.rounds++; game.streak++;
+  if (game.tries === 0) game.firstTry++;
+  recordLearn(true);
+  game.flash.ok = new Set(game.attempt);
+  game.attempt.clear();
+  game.waitRelease = true;
+  const cheer = $('cheer');
+  cheer.textContent = CHEERS[Math.floor(Math.random() * CHEERS.length)] + ' +' + game.points;
+  cheer.classList.remove('show'); void cheer.offsetWidth; cheer.classList.add('show');
+  setMsg('', '');
+  $('answer').innerHTML = describe(game.task, KEY);
+  renderStats(); paintKeys();
+  game.timer = setTimeout(newTask, 1700);
+}
+
+function wrong(badNote) {
+  game.tries++;
+  game.points = Math.max(game.task.unlimited ? 1 : 0, Math.floor(game.points / 2));
+  game.flash.bad = badNote !== undefined ? new Set([badNote]) : new Set([...game.attempt].filter(isForeign));
+  const at = game.progress;
+  game.progress = 0;
+  const sorted = badNote !== undefined ? [badNote] : [...game.attempt].sort((a, b) => a - b);
+  const played = sorted.map(m => ruName(m, KEY)).join(' · ');
+  game.task.wrongs?.push(game.task.type === 'interval' ? 'iv:' + (sorted[0] - game.task.given) : sorted.join(','));
+  game.attempt.clear();
+  game.waitRelease = held.size > 0;
+  renderTries();
+  if (game.tries >= MAX_TRIES && !game.task.unlimited) {
+    game.phase = 'done';
+    game.rounds++; game.streak = 0;
+    recordLearn(false);
+    game.flash.bad.clear();
+    game.flash.reveal = new Set(game.task.notes);
+    setMsg('Три попытки — показываю ответ', 'Слушайте и смотрите на клавиатуру');
+    $('answer').innerHTML = describe(game.task, KEY);
+    renderStats(); paintKeys();
+    const onset = game.task.sequence ? playSequence(game.task.sequence, true) : playNotes(game.task.notes, false);
+    game.timer = setTimeout(newTask, onset + 3200);
+    return;
+  }
+  const target = game.task.notes;
+  const hint = sorted.length === target.length && sameSet(pcsOf(sorted), pcsOf(target)) ? ' — звуки те, но расположение другое'
+    : game.task.type === 'melody' ? ` — сбились на ${at + 1}-й ноте`
+    : game.task.type === 'progression' ? ` — сбились на ${at + 1}-м аккорде, начните сначала`
+    : sorted.length < target.length && sorted.every(m => target.includes(m)) ? ' — не все звуки' : '';
+  setMsg(`<span style="color:var(--bad)">✗ Не то${played ? ': ' + played : ''}${hint}</span>`,
+    `Попытка ${game.tries + 1}${game.task.unlimited ? '' : ' из ' + MAX_TRIES} · можно <b>${game.points}</b> баллов`);
+  paintKeys();
+  setTimeout(() => { game.flash.bad.clear(); paintKeys(); }, 700);
+}
+
+// ---------- Ввод ----------
+function noteOn(m, latched = false) {
+  held.add(m);
+  if (!latched) markHeld();
+  if (game.captureRange) return captureRange(m);
+  if (game.phase !== 'listening' || game.waitRelease) return paintKeys();
+  const t = game.task;
+  if (t.type === 'progression') return progressionNoteOn(m);
+  if (t.type === 'melody') {
+    // Мелодия проверяется по порядку, нота за нотой.
+    if (m !== t.notes[game.progress]) return wrong(m);
+    game.attempt.add(m);
+    if (++game.progress === t.notes.length) return correct();
+    return paintKeys();
+  }
+  // В интервале стартовая нота дана — её нажатие не считается ответом.
+  if (t.type === 'interval' && m === t.given) return paintKeys();
+  game.attempt.add(m);
+  game.flash.ok.clear();
+  if (isMatch(game.attempt)) return correct();
+  // Нота проверяется сразу; аккорд — целиком, когда набрано нужное число звуков (или на отпускании, см. noteOff).
+  if (game.task.notes.length === 1 ? isForeign(m) : game.attempt.size >= game.task.notes.length) return wrong();
+  paintKeys();
+}
+// Последовательность аккордов: аккорд засчитан, когда все его звуки нажаты (удержанные с прошлого аккорда
+// общие звуки тоже считаются). Нажатие звука не из текущего аккорда — ошибка, начинаем сначала.
+function progressionNoteOn(m) {
+  const exp = game.task.chords[game.progress], any = S.progAnyVoicing;
+  const inChord = any ? exp.some(e => mod12(e) === mod12(m)) : exp.includes(m);
+  if (!inChord) return wrong(m);
+  game.attempt.add(m);
+  game.flash.ok.clear();
+  const have = [...game.attempt, ...held];
+  const covered = any ? exp.every(e => have.some(h => mod12(h) === mod12(e))) : exp.every(e => have.includes(e));
+  if (covered) {
+    game.progress++;
+    if (game.progress === game.task.chords.length) return correct();
+    game.flash.ok = new Set(game.attempt);
+    game.attempt.clear();
+    setMsg(TYPE_PROMPT.progression, `Аккорд ${game.progress} из ${game.task.chords.length} ✓`);
+  }
+  paintKeys();
+}
+
+function noteOff(m) {
+  held.delete(m);
+  if (held.size === 0) {
+    if (game.waitRelease) game.waitRelease = false;
+    else if (game.phase === 'listening' && game.attempt.size > 0 && game.task.notes.length > 1 && !game.task.sequence && !game.task.chords) {
+      // Отпустил все клавиши, не набрав аккорд целиком
+      paintKeys();
+      return wrong();
+    }
+  }
+  paintKeys();
+}
+function markHeld() { paintKeys(); }
+
+function clickKey(m) {
+  sound(m, 0, 0.6);
+  noteOn(m, true);
+  held.delete(m);
+  setTimeout(paintKeys, 150);
+}
+
+function captureRange(m) {
+  if (game.captureRange === 1) {
+    game.captureLo = m; game.captureRange = 2;
+    $('rangeHint').textContent = `Нижняя: ${plainSci(m)}. Теперь нажмите самую верхнюю ноту.`;
+  } else {
+    game.captureRange = 0;
+    $('lo').value = Math.min(game.captureLo, m); $('hi').value = Math.max(game.captureLo, m);
+    $('rangeBtn').classList.remove('active');
+    $('rangeHint').textContent = '';
+    held.clear();
+    onSettingsChange();
+  }
+  paintKeys();
+}
+
+function onMidiMessage(e) {
+  const [st, d1, d2] = e.data;
+  const cmd = st & 0xf0;
+  if (cmd === 0x90 && d2 > 0) noteOn(d1);
+  else if (cmd === 0x80 || cmd === 0x90) noteOff(d1);
+}
+
+function refreshMidi() {
+  const ins = [...midi.inputs.values()], outs = [...midi.outputs.values()];
+  ins.forEach(i => { i.onmidimessage = onMidiMessage; });
+  const st = $('midiStatus');
+  st.className = ins.length ? 'on' : 'off';
+  st.textContent = ins.length ? 'MIDI: ' + ins.map(i => i.name).join(', ') : 'MIDI-устройство не найдено — можно играть мышью';
+  const sel = $('output');
+  sel.innerHTML = outs.map(o => `<option value="${o.id}">Звук задания: ${o.name}</option>`).join('') +
+    '<option value="synth">Звук задания: компьютер</option>';
+  sel.value = outs.some(o => o.id === S.output) || S.output === 'synth' ? S.output : (outs[0]?.id || 'synth');
+}
+
+// ---------- Обучение ----------
+// Карточка — конкретное задание на конкретных клавишах. Для каждой храним силу знания s ∈ [0, 1]
+// (скользящее среднее оценок за показы), число показов, серию ответов с первой попытки и с чем путали.
+// Новая карточка открывается, только когда все открытые выучены; слабые выпадают чаще.
+const SLOW_MS = { note: 3000, dyad: 4500, triad: 6000, seventh: 8000, interval: 3500 };
+const KNOWN = { minSeen: 3, minStrength: 0.75, minStreak: 2 };
+const SCORE_BY_TRY = [1, 0.4, 0.15];
+let learn = null;
+
+// Курс в ступенях тональности: 0 — тоника первой октавы (примерно), 7 — тоника выше, -3 — доминанта ниже.
+const COURSE = [
+  [0], [4], [2], [7],                           // тоника, доминанта, медианта, верхняя тоника
+  [3], [1], [5], [6],                           // остальные ступени
+  [0, 2], [0, 4], [2, 4], [0, 7],               // интервалы тонического трезвучия
+  [0, 2, 4],                                    // T
+  [4, 7], [2, 7],                               // интервалы обращений
+  [2, 4, 7], [-3, 0, 2],                        // T₆, T₆₄
+  [-1], [-2], [-3],                             // расширяем диапазон вниз
+  [3, 5, 7], [-3, -1, 1],                       // S, D
+  [0, 3, 5], [-1, 1, 4],                        // S₆₄, D₆
+  [0, 1], [0, 3], [0, 5], [0, 6], [-1, 3],      // остальные интервалы от тоники, тритон
+  [8], [9], [10], [11],                         // расширяем вверх
+  [1, 3, 5], [5, 7, 9], [2, 4, 6], [6, 8, 10],  // II, VI, III, VII
+  [5, 7, 10], [1, 4, 6],                        // S₆, D₆₄
+  [-4], [-5], [-6], [-7], [12], [13], [14],     // ещё шире
+  [-7, -3, 2], [0, 4, 9], [-3, 1, 6],           // широкое расположение: T, T, D
+];
+
+// Курс аккордов: каждая новая карточка отличается от уже знакомых одним шагом —
+// новая функция, новое обращение, новая октава или четвёртый звук.
+const CHORD_COURSE = [
+  [0, 2, 4], [-3, -1, 1], [3, 5, 7],            // T, D, S в основном виде
+  [2, 4, 7], [-3, 0, 2],                        // T₆, T₆₄
+  [0, 3, 5], [-1, 1, 4],                        // S₆₄, D₆ — ближайшие к тонике
+  [-2, 0, 3], [1, 4, 6],                        // S₆, D₆₄
+  [4, 6, 8], [-4, -2, 0],                       // D выше, S ниже
+  [7, 9, 11], [-7, -5, -3],                     // тоника в соседних октавах
+  [-2, 0, 2], [5, 7, 9],                        // VI
+  [1, 3, 5], [3, 5, 8],                         // II, II₆
+  [2, 4, 6], [1, 3, 6],                         // III, VII₆
+  [-3, -1, 1, 3],                               // D₇
+  [-1, 1, 3, 4], [1, 3, 4, 6], [3, 4, 6, 8],    // D₆₅, D₄₃, D₂
+  [1, 3, 5, 7], [-1, 1, 3, 5], [0, 2, 4, 6],    // II₇, VII₇, I₇
+  [-7, -3, 2], [-4, 0, 5], [-3, 1, 6],          // широкое расположение: T, S, D
+];
+const COURSES = { general: COURSE, chords: CHORD_COURSE };
+
+// Курс интервалов: карточка — интервал с направлением (в полутонах), стартовая нота меняется.
+// Сначала далёкие по звучанию ч5 и ч8, потом терции, кварта, секунды, сексты, септимы, тритон; затем всё вниз.
+const INTERVAL_COURSE = [7, 12, 4, 5, 2, 3, 1, 9, 8, 10, 11, 6, -7, -12, -4, -5, -3, -2, -1, -9, -8, -10, -11, -6];
+const IV_SHORT = ['ч1', 'м2', 'б2', 'м3', 'б3', 'ч4', 'тритон', 'ч5', 'м6', 'б6', 'м7', 'б7', 'ч8'];
+// Стартовые ноты (ступени от тоники) добавляются по мере того, как карточки выучиваются: одна новая на каждые две.
+const START_DEGREES = [0, 4, 3, 1, 5, 2, 6, -3, -2, 7, -1, -4];
+
+// Курс мелодий: ступени от тоники. Сначала один интервал от тоники, потом 3–4 звука,
+// потом фразы из известных мелодий и, наконец, целые фразы.
+const MELODY_COURSE = [
+  [[0, 4]], [[0, 2]], [[0, 7]], [[0, 1]],
+  [[0, 2, 4]], [[0, 1, 2]], [[0, 4, 2]], [[0, 2, 0]], [[0, -1, 0]], [[0, 4, 7]],
+  [[0, 1, 2, 0], 'Братец Яков — начало'], [[0, 2, 4, 7]], [[0, 0, 4, 4], 'Twinkle, Twinkle — начало'],
+  [[0, 1, 2, 3]], [[0, 2, 1, 0]],
+  [[0, 1, 2, 3, 4]], [[4, 3, 2, 1, 0]], [[2, 1, 0, 1, 2], 'Мэри и барашек — начало'], [[0, 0, 4, 4, 5]],
+  [[2, 3, 4, 2, 3, 4], 'Братец Яков — вторая фраза'],
+  [[0, 0, 4, 4, 5, 5, 4], 'Twinkle, Twinkle, Little Star'],
+  [[2, 1, 0, 1, 2, 2, 2], 'Мэри и барашек'],
+  [[3, 3, 2, 2, 1, 1, 0], 'Twinkle — вторая фраза'],
+  [[2, 2, 3, 4, 4, 3, 2], 'Ода к радости — начало'],
+  [[0, 1, 2, 0, 0, 1, 2, 0], 'Братец Яков'],
+  [[0, 4, 3, 2, 1, 0]], [[0, 2, 4, 7, 4, 2, 0]],
+  [[2, 2, 3, 4, 4, 3, 2, 1], 'Ода к радости — первая строка'],
+  [[0, 0, 1, 2, 2, 1, 1], 'Ода к радости — окончание фразы'],
+  [[4, 7, 5, 4, 3, 2, 1, 0]],
+  [[0, 0, 4, 4, 5, 5, 4, 3, 3, 2, 2, 1, 1, 0], 'Twinkle, Twinkle — целиком'],
+  [[2, 2, 3, 4, 4, 3, 2, 1, 0, 0, 1, 2, 2, 1, 1], 'Ода к радости — фраза целиком'],
+];
+
+// Последовательности аккордов (ступени от тоники, 0 = I). Сначала один аккорд после тоники — слышим функцию
+// в контексте тональности; затем каденции; затем ходовые схемы, на которых строится импровизация.
+const PROGRESSIONS = [
+  [[0, 4], 'Тоника → доминанта'], [[0, 3], 'Тоника → субдоминанта'],
+  [[0, 5], 'Тоника → VI'], [[0, 1], 'Тоника → II'],
+  [[0, 4, 0], 'Автентический оборот'], [[0, 3, 0], 'Плагальный оборот'],
+  [[0, 3, 4, 0], 'Полная каденция'], [[0, 4, 5], 'Прерванный оборот'],
+  [[1, 4, 0], 'II–V–I'],
+  [[0, 5, 3, 4], 'Схема 50-х'], [[0, 4, 5, 3], 'Поп-схема'], [[5, 3, 0, 4], 'Поп-схема от VI'],
+  [[0, 5, 1, 4], 'Оборот I–VI–II–V'],
+  [[0, 2], 'Тоника → III'], [[0, 3, 1, 4, 0], 'Каденция через II'],
+  [[1, 4, 0, 5], 'II–V–I–VI'], [[5, 1, 4, 0], 'Квинтовый ход VI–II–V–I'],
+  [[0, 6], 'Тоника → VII'], [[0, 3, 0, 4, 3, 0], 'Блюзовая схема (сжато)'],
+  [[0, 4, 5, 2, 3, 0, 3, 4], 'Канон Пахельбеля'],
+  [[0, 3, 6, 2, 5, 1, 4, 0], 'Диатонический квинтовый круг'],
+];
+const CHORD_SYMBOL = { maj: '', min: 'm', dim: 'dim', aug: '+', dom7: '7', min7: 'm7', maj7: 'maj7', hdim7: 'm7♭5', dim7: 'dim7' };
+const ROMAN_SUFFIX = { dim: '°', aug: '+', dom7: '7', min7: '7', maj7: 'maj7', hdim7: 'ø7', dim7: '°7' };
+
+// Плавное голосоведение: каждый следующий аккорд — обращение в тесном расположении,
+// ближайшее к предыдущему (как играет пианист). Бас — основной тон октавой ниже.
+function voiceProgression(degs, seventh, key) {
+  const T = tonicMidi(key);
+  // В гармоническом миноре повышенная VII ступень нужна только в V и VII; остальные аккорды — из натурального.
+  const natural = key.mode === 'harmonic' ? degreeFn(buildKey(key.tonic, 'minor')) : null;
+  const degFor = d => natural && ![4, 6].includes(((d % 7) + 7) % 7) ? natural : degreeFn(key);
+  const deg = degreeFn(key);
+  const rootPos = d => (seventh ? [0, 2, 4, 6] : [0, 2, 4]).map(k => degFor(d)(d + k));
+  const voicings = notes => {
+    const out = [];
+    for (let inv = 0; inv < notes.length; inv++) {
+      const v = [...notes.slice(inv), ...notes.slice(0, inv).map(x => x + 12)];
+      for (const sh of [-24, -12, 0, 12]) {
+        const w = v.map(x => x + sh);
+        if (w[0] >= T - 7 && w[w.length - 1] <= T + 19) out.push(w);
+      }
+    }
+    return out;
+  };
+  const chords = [];
+  degs.forEach((d, i) => {
+    const vs = voicings(rootPos(d));
+    if (i === 0) {
+      const root = rootPos(d)[0], r = root - 12 * Math.round((root - T) / 12);
+      chords.push(vs.find(v => v[0] === r) || vs[0]);
+    } else {
+      const prev = chords[i - 1];
+      // Минимум движения голосов плюс лёгкое притяжение к середине, чтобы длинные схемы не уползали.
+      const mid = v => v.reduce((a, x) => a + x, 0) / v.length;
+      const cost = v => v.reduce((a, x, k) => a + Math.abs(x - prev[k]), 0) + Math.abs(mid(v) - (T + 5));
+      chords.push(vs.reduce((best, v) => cost(v) < cost(best) ? v : best));
+    }
+  });
+  const bass = degs.map(d => { let b = T - 12 + mod12(deg(d) - T); if (b > T - 5) b -= 12; return b; });
+  const info = degs.map(d => taskFromNotes(rootPos(d)).shape.info);
+  const romans = degs.map((d, i) => {
+    const q = info[i].quality, r = ROMAN[((d % 7) + 7) % 7];
+    return (MINORISH.has(q) ? r.toLowerCase() : r) + (ROMAN_SUFFIX[q] || '');
+  });
+  const symbols = info.map(i => { const sp = key.spell(i.rootPc); return LETTERS[sp.letter] + ACC[sp.acc] + CHORD_SYMBOL[i.quality]; });
+  return { chords, bass, romans, symbols };
+}
+
+function progressionItems(key) {
+  const make = ([degs, name], seventh) => {
+    const v = voiceProgression(degs, seventh, key);
+    return { key: 'prog:' + (seventh ? '7' : 't') + ':' + degs.join(','), kind: 'progression', name, seventh, ...v,
+      notes: [...v.chords.flat(), ...v.bass] };
+  };
+  const tri = S.progTriads ? PROGRESSIONS.map(p => make(p, false)) : [];
+  const sev = S.progSevenths ? PROGRESSIONS.map(p => make(p, true)) : [];
+  if (!tri.length) return sev;
+  if (!sev.length) return tri;
+  // Оба типа: септаккордовая версия схемы идёт на три карточки позже трезвучной.
+  const out = [];
+  tri.forEach((t, i) => { out.push(t); if (i >= 3) out.push(sev[i - 3]); });
+  out.push(...sev.slice(tri.length - 3));
+  return out;
+}
+
+function tonicMidi(key) { const t = key.chromatic ? 0 : key.tonic; return 60 + t - (t > 6 ? 12 : 0); }
+function degreeFn(key) {
+  const steps = MODE_STEPS[key.chromatic ? 'major' : key.mode], T = tonicMidi(key);
+  return i => T + steps[((i % 7) + 7) % 7] + 12 * Math.floor(i / 7);
+}
+
+function curriculumFor(key) {
+  const deg = degreeFn(key);
+  if (S.course === 'intervals') return INTERVAL_COURSE.map(semis => ({ key: 'iv:' + semis, kind: 'interval', semis }));
+  if (S.course === 'progressions') return progressionItems(key);
+  if (S.course === 'melodies') return MELODY_COURSE.map(([ds, name]) => {
+    const notes = ds.map(deg);
+    return { key: 'mel:' + notes.join(','), kind: 'melody', notes, name };
+  });
+  const items = COURSES[S.course].map(ds => ds.map(deg));
+  if (key.chromatic && S.course === 'general') items.push(...[1, 3, 6, 8, 10].map(pc => [60 + pc]));
+  return items.map(notes => ({ key: notes.join(','), notes }));
+}
+
+function intervalStarts() {
+  const deg = degreeFn(KEY), T = tonicMidi(KEY);
+  const all = START_DEGREES.map(deg);
+  // Последними — ноты вне тональности (чёрные клавиши в До мажоре).
+  for (const x of [1, 3, 6, 8, 10]) if (!KEY.pcs.has(mod12(T + x)) || KEY.chromatic) all.push(T + x);
+  const known = activeItems().filter(it => isKnown(rec(it.key))).length;
+  return [...new Set(all)].slice(0, 1 + Math.floor(known / 2));
+}
+
+function taskForItem(item) {
+  if (item.kind === 'interval') {
+    const starts = intervalStarts().filter(m => m + item.semis >= 36 && m + item.semis <= 96);
+    const given = starts[Math.floor(Math.random() * starts.length)];
+    return { type: 'interval', notes: [given + item.semis], given, sequence: [given, given + item.semis] };
+  }
+  if (item.kind === 'progression') return { type: 'progression', chords: item.chords, bass: item.bass,
+    notes: item.chords.flat(), givenChord: S.progShowFirst ? item.chords[0] : null, unlimited: true };
+  if (item.kind === 'melody') return { type: 'melody', notes: item.notes, given: item.notes[0], sequence: item.notes };
+  return taskFromNotes(item.notes);
+}
+
+const learnStoreKey = () => 'earLearn:' + (KEY.chromatic ? 'chromatic' : KEY.tonic + ':' + KEY.mode) +
+  (S.course === 'general' ? '' : ':' + S.course) +
+  (S.course === 'progressions' ? ':' + (S.progTriads ? 't' : '') + (S.progSevenths ? '7' : '') : '');
+function loadLearn() {
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(learnStoreKey())); } catch {}
+  learn = { curriculum: curriculumFor(KEY), data: data || { introduced: 0, sinceIntro: 0, items: {} }, recent: [] };
+}
+function saveLearn() { try { localStorage.setItem(learnStoreKey(), JSON.stringify(learn.data)); } catch {} }
+const rec = k => learn.data.items[k] ||= { s: 0, n: 0, streak: 0, last: 0, conf: {} };
+// Знание понемногу забывается: −3% в сутки без повторения.
+const strength = r => r.n ? r.s * 0.97 ** ((Date.now() - r.last) / 864e5) : 0;
+const isKnown = r => r.n >= KNOWN.minSeen && strength(r) >= KNOWN.minStrength && r.streak >= KNOWN.minStreak;
+const activeItems = () => learn.curriculum.slice(0, learn.data.introduced);
+
+function weightedPick(items, weights) {
+  const sum = weights.reduce((a, b) => a + b, 0);
+  let x = Math.random() * sum;
+  for (let i = 0; i < items.length; i++) if ((x -= weights[i]) < 0) return items[i];
+  return null;
+}
+
+function pickLearnTask() {
+  const D = learn.data, active = activeItems();
+  // Новое — когда всё открытое выучено. Чтобы не застрять навсегда на одной трудной карточке,
+  // после 30 заданий без новинок допускаем одну невыученную.
+  const unknown = active.filter(it => !isKnown(rec(it.key))).length;
+  const ready = active.length < 2 || (D.sinceIntro >= 3 && unknown === 0) || (D.sinceIntro >= 30 && unknown <= 1);
+  let item, intro = false;
+  if (ready && D.introduced < learn.curriculum.length) {
+    item = learn.curriculum[D.introduced++];
+    D.sinceIntro = 0; intro = true;
+    saveLearn(); buildKeyboard();
+  } else {
+    const last = learn.recent.at(-1);
+    // Контраст: иногда сразу даём то, с чем путали предыдущее задание.
+    const confusers = last ? Object.keys(rec(last).conf).filter(k => active.some(it => it.key === k)) : [];
+    if (confusers.length && Math.random() < 0.35) {
+      const k = confusers[Math.floor(Math.random() * confusers.length)];
+      item = active.find(it => it.key === k);
+    } else {
+      const weights = active.map(it => {
+        const r = rec(it.key);
+        let w = 0.1 + 3 * (1 - strength(r)) ** 2 + (isKnown(r) ? 0 : 0.6);
+        if (it.key === last) w = 0;
+        else if (learn.recent.slice(-3).includes(it.key)) w *= 0.4;
+        return w;
+      });
+      item = weightedPick(active, weights) || active[0];
+    }
+  }
+  learn.recent.push(item.key);
+  return { ...taskForItem(item), item, intro, wrongs: [] };
+}
+
+function recordLearn(success) {
+  const t = game.task;
+  if (!t?.item || !learn) return;
+  const r = rec(t.item.key);
+  learn.data.sinceIntro++;
+  for (const k of t.wrongs) if (k !== t.item.key) r.conf[k] = (r.conf[k] || 0) + 1;
+  // Первый показ — с подсказкой, его в силу знания не засчитываем.
+  if (!t.intro) {
+    let score = success ? SCORE_BY_TRY[game.tries] ?? 0.05 : 0;
+    const slow = t.type === 'melody' ? 1200 * t.notes.length + 1500
+      : t.type === 'progression' ? 2500 * t.chords.length + 1500 : SLOW_MS[t.type];
+    if (success && game.tries === 0 && performance.now() - game.listenStart > slow) score = 0.7;
+    r.s = r.n ? r.s * 0.6 + score * 0.4 : score * 0.8;
+    r.n++;
+    r.streak = success && game.tries === 0 ? r.streak + 1 : 0;
+  }
+  r.last = Date.now();
+  saveLearn(); renderLearn();
+}
+
+function itemLabel(item) {
+  if (item.kind === 'progression') return item.romans.join('–') + ` <small>${item.symbols.join(' ')}</small>`;
+  if (item.kind === 'interval') return IV_SHORT[Math.abs(item.semis)] + (item.semis > 0 ? '↑' : '↓');
+  if (item.kind === 'melody') return (item.name || item.notes.map(m => sciName(m, KEY)).join(' ')) +
+    ` <small>${item.notes.length} зв.</small>`;
+  const t = taskFromNotes(item.notes);
+  if (t.type === 'note') return `${ruName(item.notes[0], KEY)} <small>${sciName(item.notes[0], KEY)}</small>`;
+  if ((t.type === 'triad' || t.type === 'seventh') && t.shape.info) {
+    const fn = functionLabel(t.shape.info, KEY);
+    return `${fn || ruName(t.shape.info.rootPc + 60, KEY)} <small>${item.notes.map(m => sciName(m, KEY)).join(' ')}</small>`;
+  }
+  return item.notes.map(m => sciName(m, KEY)).join('–');
+}
+
+function renderLearn() {
+  if (!learn || S.train !== 'learn') return;
+  const active = activeItems(), all = learn.curriculum;
+  const known = active.filter(it => isKnown(rec(it.key))).length;
+  $('learnSummary').innerHTML = `Выучено <b>${known}</b> из ${active.length} открытых · всего в курсе ${all.length}`;
+  const cur = game.task?.item?.key;
+  $('chips').innerHTML = all.map((it, i) => {
+    if (i >= active.length) return i === active.length ? `<span class="chip locked">ещё ${all.length - i} впереди</span>` : '';
+    const r = rec(it.key), s = strength(r), k = isKnown(r);
+    const bg = r.n ? `background: hsl(${Math.round(120 * s)} 65% 50% / .22)` : '';
+    const title = `Показов: ${r.n}, сила: ${Math.round(s * 100)}%, подряд с первой попытки: ${r.streak}`;
+    return `<span class="chip ${k ? 'known' : ''} ${it.key === cur ? 'now' : ''}" style="${bg}" title="${title}">${k ? '✓ ' : ''}${itemLabel(it)}</span>`;
+  }).join('');
+  const pairs = [];
+  for (const it of active) for (const [k, c] of Object.entries(rec(it.key).conf)) {
+    const other = active.find(o => o.key === k);
+    if (other && c >= 2) pairs.push([c, `${itemLabel(it)} → ${itemLabel(other)}`]);
+  }
+  pairs.sort((a, b) => b[0] - a[0]);
+  $('confusions').innerHTML = pairs.length ? 'Часто путаете: ' + pairs.slice(0, 4).map(p => `${p[1]} (${p[0]}×)`).join(', ') : '';
+}
+
+function viewRange() {
+  if (S.train !== 'learn' || !learn || demo.on) return [S.lo, S.hi];
+  const T = tonicMidi(KEY);
+  if (S.course === 'intervals') {
+    const st = intervalStarts(), sem = activeItems().map(it => it.semis);
+    return [Math.min(T, ...st) + Math.min(0, ...sem), Math.max(T + 12, Math.max(...st) + Math.max(0, ...sem))];
+  }
+  const ns = activeItems().flatMap(it => it.notes);
+  return [Math.min(T, ...ns), Math.max(T + 12, ...ns)];
+}
+
+// ---------- Демо-режим ----------
+// Ctrl+Shift+D (или ?demo в адресе) — задания идут по порядку из demo.txt, счёт обнуляется.
+const demo = { on: false, items: [], i: 0 };
+
+function parseNote(tok) {
+  const m = /^([A-Ga-g])(#|♯|b|♭)?(-?\d)$/.exec(tok);
+  if (!m) throw new Error('Не понял ноту: ' + tok);
+  const acc = { '#': 1, '♯': 1, 'b': -1, '♭': -1 }[m[2]] || 0;
+  return (+m[3] + 1) * 12 + LETTER_PC[LETTERS.indexOf(m[1].toUpperCase())] + acc;
+}
+
+function taskFromNotes(notes) {
+  notes = [...notes].sort((a, b) => a - b);
+  if (notes.length === 1) return { type: 'note', notes };
+  if (notes.length === 2) return { type: 'dyad', notes };
+  const pcs = [...new Set(notes.map(mod12))];
+  for (const r of pcs) {
+    const t = pcs.map(p => mod12(p - r)).sort((a, b) => a - b);
+    const quality = t.length === 3 ? triadQuality(t[1], t[2]) : t.length === 4 ? SEVENTHS[t.slice(1).join(',')] : null;
+    if (!quality) continue;
+    const seventh = t.length === 4;
+    return { type: seventh ? 'seventh' : 'triad', notes, shape: { info: {
+      rootPc: r, quality, seventh, inv: t.indexOf(mod12(notes[0] - r)),
+      spread: notes[notes.length - 1] - notes[0] > 12,
+      degree: KEY.chromatic ? undefined : KEY.byPc.get(r)?.degree,
+    } } };
+  }
+  return { type: notes.length === 3 ? 'triad' : 'seventh', notes, shape: { info: null } };
+}
+
+async function loadDemo() {
+  const text = await (await fetch('demo.txt', { cache: 'no-store' })).text();
+  return text.split('\n').map(l => l.replace(/#.*$/, '').trim()).filter(Boolean)
+    .map(l => l.split(/[\s,]+/).map(parseNote));
+}
+
+async function toggleDemo(force) {
+  demo.on = force ?? !demo.on;
+  $('demoMark').classList.toggle('on', demo.on);
+  if (demo.on) {
+    try { demo.items = await loadDemo(); } catch (e) { demo.on = false; setMsg('Ошибка в demo.txt', e.message); return; }
+    demo.i = 0;
+  }
+  clearTimeout(game.timer);
+  Object.assign(game, { phase: 'idle', task: null, total: 0, rounds: 0, firstTry: 0, streak: 0, tries: 0 });
+  game.attempt.clear();
+  for (const s of Object.values(game.flash)) s.clear();
+  $('answer').innerHTML = ''; $('repeatBtn').disabled = true; $('skipBtn').disabled = true;
+  $('startBtn').innerHTML = 'Начать<kbd>Enter</kbd>';
+  setMsg('Нажмите «Начать»', 'Программа сыграет задание — повторите его на клавиатуре');
+  renderTries(); renderStats(); paintKeys();
+}
+
+// ---------- Запуск ----------
+function $(id) { return document.getElementById(id); }
+
+loadLearn();
+fillSettingsUI();
+buildKeyboard();
+renderStats();
+renderLearn();
+$('learnReset').onclick = () => {
+  if (!confirm('Сбросить прогресс обучения в этой тональности?')) return;
+  try { localStorage.removeItem(learnStoreKey()); } catch {}
+  loadLearn(); buildKeyboard(); renderLearn();
+  if (game.phase !== 'idle') newTask();
+};
+for (const id of ['train', 'course', 'lo', 'hi', 'tonic', 'mode', 'level', 'output', ...BOOL_SETTINGS])
+  $(id).addEventListener('change', onSettingsChange);
+
+$('startBtn').onclick = () => { ac ||= new AudioContext(); newTask(); };
+$('repeatBtn').onclick = () => { if (game.task && game.phase !== 'done') playTask(); };
+$('skipBtn').onclick = () => { if (game.task) { game.streak = 0; renderStats(); newTask(); } };
+$('rangeBtn').onclick = () => {
+  game.captureRange = game.captureRange ? 0 : 1;
+  $('rangeBtn').classList.toggle('active', !!game.captureRange);
+  $('rangeHint').textContent = game.captureRange ? 'Нажмите на пианино самую нижнюю ноту диапазона.' : '';
+};
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT') return;
+  if (e.code === 'KeyD' && e.ctrlKey && e.shiftKey) { e.preventDefault(); toggleDemo(); return; }
+  if (e.code === 'Space') { e.preventDefault(); $('repeatBtn').click(); }
+  if (e.code === 'Enter') { e.preventDefault(); $('startBtn').click(); }
+});
+
+if (new URLSearchParams(location.search).has('demo')) toggleDemo(true);
+
+if (navigator.requestMIDIAccess) {
+  navigator.requestMIDIAccess().then(m => {
+    midi = m; refreshMidi();
+    midi.onstatechange = refreshMidi;
+  }, () => { noMidi('Нет доступа к MIDI — разрешите его в браузере'); });
+} else {
+  noMidi('Браузер не поддерживает MIDI — откройте в Chrome');
+}
+function noMidi(text) {
+  $('midiStatus').textContent = text;
+  $('output').innerHTML = '<option value="synth">Звук задания: компьютер</option>';
+}
+</script>
+</body>
+</html>
